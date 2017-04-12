@@ -5,7 +5,7 @@ Final Project for Data Science
 250607166 Alan Michaan</br>
 250689634 Meshach Jones</br>
 250697299 Kairi Vaikla</br>
-Nicole Miles</br>
+250672372 Nicole Miles</br>
 
 <h1> Short Description </h1>
 This is the final project for data science. It includes the report generation shiny UI and server files.
