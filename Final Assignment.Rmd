@@ -1,0 +1,110 @@
+---
+title: "Final Assignment"
+output: html_document
+---
+##Read Team Data
+
+First, player statistic data must be imported. To do this, the function below returns team data in a data frame. 
+
+```{r}
+  getAllTeams <- reactive({
+    nbacon <- connectToDb()
+    allTeams <- dbGetQuery(nbacon, paste0("SELECT * FROM Team"))
+    setDT(allTeams)
+    killDbConnections()
+    return(allTeams)
+  })
+```
+
+
+##Populate drop down menu
+
+Using the inputs generated from the first function, this function reads the data and populates the dropdown menu in visualizer with team names. Through this, users can create targeted reports by filtering for specific teams. The final line of this code selects a team based on the specific ID number.
+
+```{r}
+output$teamReportDropdown <- renderUI({
+  allteams <- getAllTeams()$team_id
+  names(allteams) <- getAllTeams()$teamname
+  allteams <- allteams[2:length(allteams)] # remove no team at 1
+  selectInput("teamReportName", "Select Team: ", choices = allteams, selected = "1610612761")
+})
+```
+
+## Pull player names and IDs
+
+This function pulls player data for a given team that will allow the program to populate the report that will be generated. 
+
+```{r}
+getAllPlayersOfTeamReport <- reactive({
+  nbacon <- connectToDb()
+  allPlayers <- dbGetQuery(nbacon, paste0("SELECT player_id FROM Player WHERE team_id = ", input$teamReportName))
+  setDT(allPlayers)
+  killDbConnections()
+  return(allPlayers)
+})
+```
+
+## Get the stats on each player ID
+
+This function uses player IDs to collect statistics from the website, nba.com. The data is then unlisted and formatted as a series of matrices within a larger data frame of 27 columns, each column representing a different stat. The if else function prevents the potential for errors in report generation due to missing player IDs. If this happens, the function returns 'NULL' to signal the missing information. 
+
+```{r}
+getPlayerStatsReport <- function(playerID) {
+  nbacon <- connectToDb()
+  playerAveragesDF <- dbGetQuery(nbacon, paste0("SELECT *, off_rebounds + def_rebounds AS rebounds FROM PlayerSeasonStats WHERE player_id = ", playerID))
+  killDbConnections()
+  if(nrow(playerAveragesDF) == 0) {
+    playerAveragesURL <- paste0("http://stats.nba.com/stats/playercareerstats?PerMode=PerGame&PlayerID=", playerID)
+    
+    playerAveragesJSON <- fromJSON(RCurl::getURL(playerAveragesURL))
+    #playerAveragesJSON <- fromJSON(playerAveragesURL)
+    
+    playerAveragesDF <- data.frame(matrix(unlist(playerAveragesJSON$resultSets[[3]][[1]]), ncol = 27))
+    colnames(playerAveragesDF) <- playerAveragesJSON$resultSets[[2]][[1]]
+  } else {
+    colnames(playerAveragesDF) <- c("PLAYER_ID", "SEASON_ID", "GP", "GS", "MIN", "FGM", "FGA",
+                                    "FG3M", "FG3A", "FTM", "FTA", "OREB", "DREB", "AST", "STL",
+                                    "BLK", "TOV", "PF", "PTS", "REB")
+    playerAveragesDF$PLAYER_ID <- NULL
+    playerAveragesDF$SEASON_ID <- NULL
+  }
+  playerAveragesDF$PTS <- as.numeric(as.vector(playerAveragesDF$PTS))
+  playerAveragesDF$REB <- as.numeric(as.vector(playerAveragesDF$REB))
+  playerAveragesDF$AST <- as.numeric(as.vector(playerAveragesDF$AST))
+  playerAveragesDF$STL <- as.numeric(as.vector(playerAveragesDF$STL))
+  playerAveragesDF$BLK <- as.numeric(as.vector(playerAveragesDF$BLK))
+  playerAveragesDF$TOV <- as.numeric(as.vector(playerAveragesDF$TOV))
+  return (playerAveragesDF)
+}
+```
+
+## Generate Report
+
+This function generates an HTML report file called report.html. The report is copied to a temporary directory before
+processing so that permissions to the current working directory did not have to be written, which can happen when
+deployed. Next, parameters were set up to pass to Rmd document. Then, a progress object was created and an on.exit
+function was set to ensure that it closes when the reactive is exited even if there is an error. Lastly, the document is
+knit, passing in the 'params' list in the global environment to isolate the code in the document from the code in the 
+application. For a pdf output, report.html can be changed to report.pdf. 
+
+```{r}
+output$report <- downloadHandler(
+  filename = "report.html",
+  content = function(file) {
+    tempReport <- file.path("server/report.Rmd")
+    file.copy("report.Rmd", tempReport, overwrite = TRUE)
+    params <- list(teamReportId = input$teamReportName, teamReportName = getAllTeams()[team_id == input$teamReportName]$teamname)
+    progress <- shiny::Progress$new()
+    on.exit(progress$close())
+    progress$set(message = "Operation:", value = 0)
+    progress$inc(1/2, detail = "Generating Report...")
+    rmarkdown::render(tempReport, output_file = "report.html",
+                      params = params,
+                      output_dir = "reports",
+                      envir = new.env(parent = globalenv())
+    )
+    progress$inc(1/2, detail = "Report Generated!")
+  }
+)
+```
+This code is used to generate a report of of the statistics on each player, which could be useful in identifying the tendencies of different players.
