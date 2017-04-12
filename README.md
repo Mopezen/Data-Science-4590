@@ -4,7 +4,7 @@ Final Project for Data Science
 <h1> Member Student Numbers </h1>
 250607166 Alan Michaan</br>
 250689634 Meshach Jones</br>
-Kairi Vaikla</br>
+250697299 Kairi Vaikla</br>
 Nicole Miles</br>
 
 <h1> Short Description </h1>
